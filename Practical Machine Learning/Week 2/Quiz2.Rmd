@@ -1,0 +1,134 @@
+---
+title: "Practical Machine Learning Quiz 2"
+author: "Austin L. Bistline"
+date: "July 23, 2018"
+output: html_document
+---
+
+Question 2: 
+
+```{r}
+library(AppliedPredictiveModeling)
+data(concrete)
+library(caret)
+set.seed(1000)
+inTrain = createDataPartition(mixtures$CompressiveStrength, p = 3/4)[[1]]
+training = mixtures[ inTrain,]
+testing = mixtures[-inTrain,]
+```
+
+```{r}
+#Graphical 
+library(Hmisc)
+cutC = cut2(training$Cement, g=2)
+qplot(1:nrow(training), CompressiveStrength, colour=cutC, data=training) + geom_smooth(method="lm", formula=y~x)
+```
+
+
+```{r}
+Slag = cut2(training$BlastFurnaceSlag, g = 2)
+qplot(1:nrow(training), CompressiveStrength, colour=Slag, data=training) + geom_smooth(method="lm", formula=y~x)
+```
+
+```{r}
+cutFA = cut2(training$FlyAsh, g=2)
+qplot(1:nrow(training), CompressiveStrength, colour=cutFA, data=training) + geom_smooth(method="lm", formula=y~x)
+```
+
+```{r}
+cutW = cut2(training$Water, g=2)
+qplot(1:nrow(training), CompressiveStrength, colour=cutW, data=training) + geom_smooth(method="lm", formula=y~x)
+```
+
+```{r}
+Plastic = cut2(training$Superplasticizer, g=3)
+qplot(1:nrow(training), CompressiveStrength, colour=Plastic, data=training) + geom_smooth(method="lm", formula=y~x)
+```
+
+```{r}
+cutCA = cut2(training$CoarseAggregate, g=2)
+qplot(1:nrow(training), CompressiveStrength, colour=cutCA, data=training) + geom_smooth(method="lm", formula=y~x)
+```
+
+```{r}
+cutFineA = cut2(training$FineAggregate, g=2)
+qplot(1:nrow(training), CompressiveStrength, colour=cutFineA, data=training) + geom_smooth(method="lm", formula=y~x)
+```
+
+```{r}
+cutA = cut2(training$Age, g=4)
+qplot(1:nrow(training), CompressiveStrength, colour=cutA, data=training) + geom_smooth(method="lm", formula=y~x)
+```
+
+All of these trend down.  This is a non-random pattern in the data which does indeed suggest that a variable is missing.
+
+Question 3:  
+
+```{r}
+qplot(log(Superplasticizer + 1), data=training, geom="histogram")
+```
+
+The considerable number of equal values prevents it from not being skewed.  We see that when we add 1 to make all of the values >= 1 which makes all of the log values >= 0.
+
+Question 4: 
+
+```{r}
+library(caret)
+library(AppliedPredictiveModeling)
+set.seed(3433)
+data(AlzheimerDisease)
+adData = data.frame(diagnosis,predictors)
+inTrain = createDataPartition(adData$diagnosis, p = 3/4)[[1]]
+training = adData[ inTrain,]
+testing = adData[-inTrain,]
+```
+
+```{r}
+head(training)
+```
+
+```{r}
+tnms = names(training)
+IL.training = training[, tnms[startsWith(tnms, prefix="IL")]]
+IL.testing = testing[, tnms[startsWith(tnms, prefix="IL")]]
+preProcess(IL.training, method="pca", thresh=0.9, verbose=T)
+```
+
+Question 5:
+
+```{r}
+library(caret)
+library(AppliedPredictiveModeling)
+set.seed(3433)
+data(AlzheimerDisease)
+adData = data.frame(diagnosis,predictors)
+inTrain = createDataPartition(adData$diagnosis, p = 3/4)[[1]]
+training = adData[ inTrain,]
+testing = adData[-inTrain,]
+```
+
+```{r}
+tnms = names(training)
+training = training[, c(tnms[startsWith(tnms, prefix="IL")], "diagnosis")]
+testing = testing[, c(tnms[startsWith(tnms, prefix="IL")], "diagnosis")]
+```
+
+```{r}
+preProc = preProcess(training[, -13], method="pca", thresh=0.8)
+trainPC = predict(preProc, training[, -13])
+modelFit = train(diagnosis ~ ., method = "glm", data=trainPC)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
