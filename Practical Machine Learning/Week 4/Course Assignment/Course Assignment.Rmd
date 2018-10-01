@@ -1,1 +1,377 @@
+---
+title: "Predicting Proper Exercise Movement through Machine Learning"
+author: "Austin L. Bistline"
+date: "September 26, 2018"
+output:
+  pdf_document: default
+  html_document: default
+---
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache=TRUE)
+```
+
+## Summary
+
+Data from the study "Wearable Computing: Accelerometers' Data Classification of Body Postures and Movements. Proceedings of 21st Brazilian Symposium on Artificial Intelligence" (Ugulino, W. et al.) is explored and processed in order to build a machine-learning algorithm that can predict proper form during a dumbbell biceps curl exercise.  A model is produced using k-fold cross-validation on the entire dataset considering only covariates of motion.  It predicts the test set classe with 99.5% accuracy.  In order to form a better opinion on out-of-sample error, a second model (this time random-sampling) is produced from a small subset (75% of 50%) of the dataset using the same covariates.  The second model yields a 0% in-sample error and a 1.5% out-of-sample error.   Both models are used on an independent test set downloaded as part of a quiz, and they predict movement class of 20 observations with 100% agreement.   
+
+## Introduction
+
+This paper is best introduced by the Background section provided in the "Course Project Instructions" of the Practical Machine Learning course in the Coursera Data Science Specialization courses. 
+
+{Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).}
+
+## Data
+
+Data for this project comes from the following links (training and testing, respectively):
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+```{r}
+training = read.csv("pml-training.csv")
+testing = read.csv("pml-testing.csv")
+```
+
+# Exploring the Data
+
+We will explore the data by examining the dimensions, the initial column values and column class (str() function), the predictors and outcome.  Predictors and outcomes will be examined for correlation and possible elimination.
+
+```{r}
+# Dimensions
+dim(training); dim(testing)
+```
+
+```{r}
+# Initial column values and column classes
+str(training)
+```
+
+```{r}
+# Determining the number of test subjects and outcome levels
+unique(training$user_name); unique(training$classe)
+```
+The data consists of 160 variables for 6 unique users and 5 classes.  Many of the variables are NA so that might cause some problems.  To understand the classe levels, the data source was referred to, which reads as follows:
+
+"Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E)." (Ugulino, W. et al.)
+
+So factor A represents the exercise being performed correctly, and the remaining four represent the exercise being performed incorrectly. 
+
+# Preprocessing
+
+Initially, columns with missing values will be removed.  These columns consist of statistical and quantitative measurements of the surrounding data.  These may be placed back into the data through multiplication, or used as predictors separately later depending on the performance of our model.
+
+```{r}
+# Building a vector of column names with missing values
+testingNAs = character()
+for (i in 1:dim(testing)[2]){
+  for (j in 1:length(testing[, i])){
+    if (anyNA(testing[j, i])) {
+      testingNAs = c(testingNAs, names(testing)[i])
+      break
+    }
+  }
+}
+```
+
+The following column names are primarily comprised of NA values.  These columns are manually removed.
+
+```{r}
+print(testingNAs)
+```
+
+```{r}
+library(dplyr)
+# Removing columns with NA
+cleanTraining = select(training, -c(kurtosis_roll_belt, kurtosis_picth_belt,
+                         kurtosis_yaw_belt, skewness_roll_belt,
+                         skewness_roll_belt.1, skewness_yaw_belt, max_roll_belt,
+                         max_picth_belt, max_yaw_belt, min_roll_belt,
+                         min_pitch_belt, min_yaw_belt, amplitude_roll_belt,
+                         amplitude_pitch_belt, amplitude_yaw_belt,
+                         var_total_accel_belt, avg_roll_belt, stddev_roll_belt,
+                         var_roll_belt, avg_pitch_belt, stddev_pitch_belt,
+                         var_pitch_belt, avg_yaw_belt, stddev_yaw_belt, var_yaw_belt,
+                         var_accel_arm, avg_roll_arm, stddev_roll_arm, var_roll_arm,
+                         avg_pitch_arm, stddev_pitch_arm, var_pitch_arm, avg_yaw_arm,
+                         stddev_yaw_arm, var_yaw_arm, kurtosis_roll_arm, kurtosis_picth_arm,
+                         kurtosis_yaw_arm, skewness_roll_arm, skewness_pitch_arm,
+                         skewness_yaw_arm, max_roll_arm, max_picth_arm, max_yaw_arm,
+                         min_roll_arm, min_pitch_arm, min_yaw_arm, amplitude_roll_arm,
+                         amplitude_pitch_arm, amplitude_yaw_arm, kurtosis_roll_dumbbell,
+                         kurtosis_picth_dumbbell, kurtosis_yaw_dumbbell,
+                         skewness_roll_dumbbell, skewness_pitch_dumbbell,
+                         skewness_yaw_dumbbell, max_roll_dumbbell, max_picth_dumbbell,
+                         max_yaw_dumbbell, min_roll_dumbbell, min_pitch_dumbbell,
+                         min_yaw_dumbbell, amplitude_roll_dumbbell,
+                         amplitude_pitch_dumbbell, amplitude_yaw_dumbbell,
+                         var_accel_dumbbell, avg_roll_dumbbell, stddev_roll_dumbbell,
+                         var_roll_dumbbell, avg_pitch_dumbbell, stddev_pitch_dumbbell,
+                         var_pitch_dumbbell, avg_yaw_dumbbell, stddev_yaw_dumbbell,
+                         var_yaw_dumbbell, kurtosis_roll_forearm, kurtosis_picth_forearm,
+                         kurtosis_yaw_forearm, skewness_roll_forearm,
+                         skewness_pitch_forearm, skewness_yaw_forearm, max_roll_forearm,
+                         max_picth_forearm, max_yaw_forearm, min_roll_forearm,
+                         min_pitch_forearm, min_yaw_forearm, amplitude_roll_forearm,
+                         amplitude_pitch_forearm, amplitude_yaw_forearm, var_accel_forearm,
+                         avg_roll_forearm, stddev_roll_forearm, var_roll_forearm,
+                         avg_pitch_forearm, stddev_pitch_forearm, var_pitch_forearm,
+                         avg_yaw_forearm, stddev_yaw_forearm, var_yaw_forearm))
+dim(cleanTraining)
+```
+Checking the names included in our clean dataset.
+
+```{r}
+names(cleanTraining)
+```
+
+Next we will look at eight plots to determine which ones have variation and thus influence in the model.  The data at this point consists of rotation (roll, pitch, and yaw), gyros, acceleration, and magnetic measurements at the belt, arm, dumbbell, and forearm.  The first plots will analyze a sample of each measurement type (rotation, gyros, acceleration, and magnetic), and the second set of plots will analyze a sample of each location (belt, arm, dumbbell, and forearm).
+
+```{r}
+library(caret)
+selection = names(cleanTraining)[c(8, 21, 34, 47)]
+print(selection)
+```
+```{r}
+featurePlot(x=cleanTraining[, selection], y=cleanTraining$classe, plot="pairs")
+```
+
+Figure 1. In this figure we compare the roll sensor at all 4 locations.  Very little correlation is observable, but we observe a fair amount of variance between the measurements.
+
+```{r}
+library(caret)
+selection = names(cleanTraining)[c(13, 26, 39, 52)]
+print(selection)
+```
+```{r}
+featurePlot(x=cleanTraining[, selection], y=cleanTraining$classe, plot="pairs")
+```
+
+Figure 2. In this figure, we compare the gyros sensor at each location.  There is very little correlation between the locations, but a fair amount of variance between the belt and arm locations.
+
+```{r}
+library(caret)
+selection = names(cleanTraining)[c(15, 28, 41, 54)]
+print(selection)
+```
+```{r}
+featurePlot(x=cleanTraining[, selection], y=cleanTraining$classe, plot="pairs")
+```
+
+Figure 3. In this figure we compare the accelerometer sensor at each location and observe broad variance between most variables. 
+
+```{r}
+library(caret)
+selection = names(cleanTraining)[c(18, 31, 44, 57)]
+print(selection)
+```
+```{r}
+featurePlot(x=cleanTraining[, selection], y=cleanTraining$classe, plot="pairs")
+```
+
+Figure 4. In this figure we compare the magnetic sensor at each location and observe wide variance between most locations.  
+
+```{r}
+library(caret)
+selection = names(cleanTraining)[c(9, 12, 15, 18)]
+print(selection)
+```
+```{r}
+featurePlot(x=cleanTraining[, selection], y=cleanTraining$classe, plot="pairs")
+```
+
+Figure 5. In this figure, we compare sensors at a single location.  Now we observe more correlation, a fair amount of variance, and more sample outliers.
+
+```{r}
+library(caret)
+selection = names(cleanTraining)[c(22, 25, 28, 31)]
+print(selection)
+```
+```{r}
+featurePlot(x=cleanTraining[, selection], y=cleanTraining$classe, plot="pairs")
+```
+
+Figure 6. In this figure, we compare each sensor at a single location.  We observe correlation between variables and wide variance.
+
+```{r}
+library(caret)
+selection = names(cleanTraining)[c(35, 38, 41, 44)]
+print(selection)
+```
+```{r}
+featurePlot(x=cleanTraining[, selection], y=cleanTraining$classe, plot="pairs")
+```
+
+Figure 7. In this figure, we compare each sensor at the dumbbell location.  There is no correlation between the pitch and gyros sensor, but good correlation between the remaining pairs, and broad vatiation between the pitch and magnetic sensors.
+
+```{r}
+library(caret)
+selection = names(cleanTraining)[c(48, 51, 54, 57)]
+print(selection)
+```
+```{r}
+featurePlot(x=cleanTraining[, selection], y=cleanTraining$classe, plot="pairs")
+```
+
+Figure 8. In this figure we compare the "x" output of each sensor at the forearm location. We observe little correlation and variance with the gyros sensors, while the remaining pairs demonstrate wide variation and definite correlation. 
+
+# Model Fitting
+
+For the final model, only motion variables will be considered, therefore we will remove the first 7 columsn of the data.  One concern is that the model will overfit to a unique user, so we will use K-Fold cross validation to ensure our test sets sample widely from each user.  A "k" value of 6 will be used because we have 6 users. 
+
+```{r}
+motions = cleanTraining[, 8:60]
+folds = createFolds(y=motions$classe, k=6, list=TRUE, returnTrain = FALSE)
+motionsTrain = motions[-folds[[1]], ]
+motionsTest1 = motions[folds[[1]], ]
+motionsTest2 = motions[folds[[2]], ]
+motionsTest3 = motions[folds[[3]], ]
+motionsTest4 = motions[folds[[4]], ]
+motionsTest5 = motions[folds[[5]], ]
+motionsTest6 = motions[folds[[6]], ]
+```
+
+A random forest algorithm will be used because we mostly observed wide variance between the variables than correlation. 
+
+```{r}
+# Creating the model
+set.seed(1234)
+modFitMotions = train(classe ~ ., data=motionsTrain, method="rf")
+```
+
+```{r}
+# Checking the model accuracy
+print(modFitMotions)
+```
+
+```{r}
+# Comparing the predictions with the actual values
+table(motions$classe, predict(modFitMotions, motions))
+```
+
+```{r}
+predMotions1 = predict(modFitMotions, newdata=motionsTest1)
+predMotions2 = predict(modFitMotions, newdata=motionsTest2)
+predMotions3 = predict(modFitMotions, newdata=motionsTest3)
+predMotions4 = predict(modFitMotions, newdata=motionsTest4)
+predMotions5 = predict(modFitMotions, newdata=motionsTest5)
+predMotions6 = predict(modFitMotions, newdata=motionsTest6)
+confusionMatrix(predMotions1, motionsTest1$classe)$overall[[1]]
+confusionMatrix(predMotions2, motionsTest2$classe)$overall[[1]]
+confusionMatrix(predMotions3, motionsTest3$classe)$overall[[1]]
+confusionMatrix(predMotions4, motionsTest4$classe)$overall[[1]]
+confusionMatrix(predMotions5, motionsTest5$classe)$overall[[1]]
+confusionMatrix(predMotions6, motionsTest6$classe)$overall[[1]]
+```
+This model predicts the "classe" with 99% accuracy.  When comparing a full prediction of the total dataset with the actual data, and when used on the test sets, it predicted correcly almost 100% of the time.  The in-sample error for this model is 1%, therefore we know the out-of sample error rate will be greater than 1%.  
+
+With such a high accuracy, it is very likely we are over-fitting the model.  To test and get a better grasp of the out-of sample error rate, we will pull out a chunk of the data, and divide that into a training and testing set.  Then we will apply the resulting model back to the original dataset.  
+
+```{r}
+primTrain = createDataPartition(motions$classe, p=0.5, list=FALSE)
+primMotions = motions[primTrain, ]
+secTrain = createDataPartition(primMotions$classe, p=0.75, list=FALSE)
+secTraining = primMotions[secTrain, ]
+secTesting = primMotions[-secTrain, ]
+dim(secTraining); dim(secTesting)
+```
+```{r}
+set.seed(1234)
+secModFit = train(classe ~ ., data=secTraining, method="rf")
+```
+
+```{r}
+print(secModFit)
+```
+
+# In and Out of Sample Error
+
+To calculate the in-sample error rate, we consider the second model fit which was constructed an even distrubution of 2451 rows of the motions dataset.  The accuracy when applied to the training set is given below.
+
+```{r}
+predSecIn = predict(secModFit, secTraining)
+confusionMatrix(predSecIn, secTraining$classe)$overall[[1]]
+```
+The in sample error is essentially 0%.  For the out of sample error, we will apply the second model to data that was not in the secondary training or testing data, which is the other 50% of the motions data that was not considered at all in the training model. 
+
+```{r}
+primMotionsTestset = motions[-primTrain, ]
+```
+
+```{r}
+predSecOut = predict(secModFit, primMotionsTestset)
+confusionMatrix(predSecOut, primMotionsTestset$classe)$overall[[1]]
+```
+
+The out of sample error rate is essentially 1.5% with an accuracy of 98.5%. This is summarized below in a table of predictions vs. actual. 
+
+```{r}
+table(motions$classe, predict(secModFit, motions))
+```
+```{r}
+47+2+13+22+2+12+1+17+43+4+7+9+2+7
+```
+```{r}
+188/19622
+```
+
+188 out of 19622 observations were calculated incorrectly which is an error of 0.96%.  This could be considered relatively accurate.  
+
+# Out of sample Prediction Quiz
+
+A test set with 20 observations was provided.  Both of the models created in the preceding sections were used to predict the classe of these observations.  Both models make the same predictions. 
+
+```{r}
+cleanTesting = select(testing, 
+                      -c(kurtosis_roll_belt, kurtosis_picth_belt,
+                         kurtosis_yaw_belt, skewness_roll_belt,
+                         skewness_roll_belt.1, skewness_yaw_belt, max_roll_belt,
+                         max_picth_belt, max_yaw_belt, min_roll_belt,
+                         min_pitch_belt, min_yaw_belt, amplitude_roll_belt,
+                         amplitude_pitch_belt, amplitude_yaw_belt,
+                         var_total_accel_belt, avg_roll_belt, stddev_roll_belt,
+                         var_roll_belt, avg_pitch_belt, stddev_pitch_belt,
+                         var_pitch_belt, avg_yaw_belt, stddev_yaw_belt, var_yaw_belt,
+                         var_accel_arm, avg_roll_arm, stddev_roll_arm, var_roll_arm,
+                         avg_pitch_arm, stddev_pitch_arm, var_pitch_arm, avg_yaw_arm,
+                         stddev_yaw_arm, var_yaw_arm, kurtosis_roll_arm, kurtosis_picth_arm,
+                         kurtosis_yaw_arm, skewness_roll_arm, skewness_pitch_arm,
+                         skewness_yaw_arm, max_roll_arm, max_picth_arm, max_yaw_arm,
+                         min_roll_arm, min_pitch_arm, min_yaw_arm, amplitude_roll_arm,
+                         amplitude_pitch_arm, amplitude_yaw_arm, kurtosis_roll_dumbbell,
+                         kurtosis_picth_dumbbell, kurtosis_yaw_dumbbell,
+                         skewness_roll_dumbbell, skewness_pitch_dumbbell,
+                         skewness_yaw_dumbbell, max_roll_dumbbell, max_picth_dumbbell,
+                         max_yaw_dumbbell, min_roll_dumbbell, min_pitch_dumbbell,
+                         min_yaw_dumbbell, amplitude_roll_dumbbell,
+                         amplitude_pitch_dumbbell, amplitude_yaw_dumbbell,
+                         var_accel_dumbbell, avg_roll_dumbbell, stddev_roll_dumbbell,
+                         var_roll_dumbbell, avg_pitch_dumbbell, stddev_pitch_dumbbell,
+                         var_pitch_dumbbell, avg_yaw_dumbbell, stddev_yaw_dumbbell,
+                         var_yaw_dumbbell, kurtosis_roll_forearm, kurtosis_picth_forearm,
+                         kurtosis_yaw_forearm, skewness_roll_forearm,
+                         skewness_pitch_forearm, skewness_yaw_forearm, max_roll_forearm,
+                         max_picth_forearm, max_yaw_forearm, min_roll_forearm,
+                         min_pitch_forearm, min_yaw_forearm, amplitude_roll_forearm,
+                         amplitude_pitch_forearm, amplitude_yaw_forearm, var_accel_forearm,
+                         avg_roll_forearm, stddev_roll_forearm, var_roll_forearm,
+                         avg_pitch_forearm, stddev_pitch_forearm, var_pitch_forearm,
+                         avg_yaw_forearm, stddev_yaw_forearm, var_yaw_forearm))
+dim(cleanTesting)
+```
+```{r}
+motionsTesting = cleanTesting[, 8:60]
+dim(motionsTesting)
+```
+
+```{r}
+predict(modFitMotions, newdata=motionsTesting)
+```
+```{r}
+predict(secModFit, newdata=motionsTesting)
+```
+
+# Reference
+
+Ugulino, W.; Cardador, D.; Vega, K.; Velloso, E.; Milidiu, R.; Fuks, H. Wearable Computing: Accelerometers' Data Classification of Body Postures and Movements. Proceedings of 21st Brazilian Symposium on Artificial Intelligence. Advances in Artificial Intelligence - SBIA 2012. In: Lecture Notes in Computer Science. , pp. 52-61. Curitiba, PR: Springer Berlin / Heidelberg, 2012. ISBN 978-3-642-34458-9. DOI: 10.1007/978-3-642-34459-6_6. 
